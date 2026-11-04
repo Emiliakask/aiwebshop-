@@ -1,0 +1,11 @@
+# Secrets: only .env.example files are committed
+.env
+.env.*
+!.env.example
+*.local
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/
+*.iml

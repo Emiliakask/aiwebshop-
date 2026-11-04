@@ -1,0 +1,17 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  --color-brand-50: oklch(0.97 0.02 165);
+  --color-brand-100: oklch(0.93 0.05 165);
+  --color-brand-500: oklch(0.6 0.12 165);
+  --color-brand-600: oklch(0.52 0.11 165);
+  --color-brand-700: oklch(0.45 0.1 165);
+}
+
+@layer base {
+  html {
+    @apply bg-stone-50 text-stone-900 antialiased;
+  }
+}
