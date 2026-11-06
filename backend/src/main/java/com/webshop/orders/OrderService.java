@@ -96,6 +96,32 @@ public class OrderService {
 		return orders.save(order);
 	}
 
+	/** pending_payment -> paid. Does nothing if the order already left pending_payment. */
+	@Transactional
+	public void markPaid(String orderId) {
+		orders.findByIdForUpdate(orderId).filter(o -> o.status == OrderStatus.PENDING_PAYMENT).ifPresent(order -> {
+			order.status = OrderStatus.PAID;
+			order.paidAt = Instant.now();
+		});
+	}
+
+	/** pending_payment -> payment_failed, and the reserved stock goes back on sale. Happens at most once. */
+	@Transactional
+	public void markPaymentFailed(String orderId) {
+		orders.findByIdForUpdate(orderId).filter(o -> o.status == OrderStatus.PENDING_PAYMENT).ifPresent(order -> {
+			order.status = OrderStatus.PAYMENT_FAILED;
+			Map<UUID, Product> locked = products
+					.findAllByIdForUpdate(order.lines.stream().map(line -> line.productId).toList()).stream()
+					.collect(Collectors.toMap(p -> p.id, Function.identity()));
+			for (OrderLine line : order.lines) {
+				Product product = locked.get(line.productId);
+				if (product != null) {
+					product.stock += line.quantity;
+				}
+			}
+		});
+	}
+
 	private String newOrderId() {
 		String id;
 		do {

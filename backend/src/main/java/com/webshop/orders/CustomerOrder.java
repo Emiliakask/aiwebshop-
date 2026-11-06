@@ -87,4 +87,7 @@ public class CustomerOrder {
 
 	@Column(nullable = false)
 	public Instant createdAt;
+
+	/** When the payment provider confirmed the payment. */
+	public Instant paidAt;
 }

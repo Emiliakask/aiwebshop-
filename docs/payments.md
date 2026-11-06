@@ -1,7 +1,39 @@
 # Payments
 
-**Status:** planned. The frontend mock simulates a provider that confirms payment 3 s after the
-order is placed (`PAYMENT_CONFIRMATION_MS` in `frontend/src/mocks/handlers.ts`), and `paymentUrl` is `null`.
+**Status:** **EveryPay built** and tested against the EveryPay/LHV demo (card paid, card declined).
+Code: `backend/src/main/java/com/webshop/payments/`. The frontend mock still simulates a provider that confirms
+payment 3 s after the order is placed (`PAYMENT_CONFIRMATION_MS` in `frontend/src/mocks/handlers.ts`), with `paymentUrl` `null`.
+
+## EveryPay setup (only these values change between test and live)
+
+In `backend/.env` (git-ignored; placeholders in `backend/.env.example`):
+
+| Variable | Demo (test) | Production |
+|---|---|---|
+| `EVERYPAY_API_URL` | `https://igw-demo.every-pay.com/api/v4` | `https://pay.every-pay.eu/api/v4` |
+| `EVERYPAY_API_USERNAME` / `EVERYPAY_API_SECRET` | demo merchant portal > General settings | live merchant portal > General settings |
+| `EVERYPAY_ACCOUNT_NAME` | `EUR3D1` | your EUR processing account |
+| `PUBLIC_URL` | `http://localtest.me:3000` | `https://your-shop-domain` |
+
+- `PUBLIC_URL` is where EveryPay sends the customer back (`{PUBLIC_URL}/api/payments/everypay/return`).
+  EveryPay **refuses `localhost` and IP addresses**; `localtest.me` is a public name that points to 127.0.0.1.
+- Callback URL to set in the EveryPay merchant portal (production): `{PUBLIC_URL}/api/payments/everypay/notify`.
+  Locally EveryPay can't reach your machine, so the order page's polling asks EveryPay instead.
+- Test cards (LHV sandbox, any name, expiry 08/27): `5168830788067541` CVC `973` = paid,
+  `5413330089010020` CVC `111` = declined. On the 3-D Secure test screen click **Yes**.
+
+### How it works (built)
+
+1. `POST /api/orders` saves the order (stock reserved), then `PaymentService.startFor` calls EveryPay
+   `POST /payments/oneoff` (amount = total cents as an exact 2-decimal number, `order_reference` = order id)
+   and returns the order with `paymentUrl`. The checkout page redirects there.
+   If EveryPay refuses, the order becomes `payment_failed` and the stock is released.
+2. EveryPay sends the customer to `/api/payments/everypay/return?payment_reference=…`. The backend asks EveryPay
+   `GET /payments/{ref}` and redirects to `{FRONTEND_URL}/orders/{id}`. The return URL itself proves nothing.
+3. `GET /api/orders/{id}` (polled by the order page) also asks EveryPay, at most every 3 s per payment.
+4. `settled`/`authorised` -> `paid` (only if EveryPay's `initial_amount` on **our** account equals the order total;
+   otherwise logged as an error and left pending). `failed`/`abandoned`/`voided` -> `payment_failed` + stock back.
+   Each change happens once, with the order row locked.
 
 ## Goal
 
@@ -39,6 +71,14 @@ public interface PaymentProvider {
   ```
   Each adapter has its own `app.payments.<code>.*` settings, with secrets taken from env vars.
 
+### Not built yet
+
+- Payment method choice at checkout (`GET /api/payment-methods`): with one provider the backend uses the first in
+  `app.payments.enabled`. Add it together with the second provider.
+- The reconciliation job: orders whose customer never comes back stay `pending_payment` (stock reserved) until
+  someone opens the order page. Build the scheduled check + 30 min expiry before going live.
+- Emails on paid / not paid (`orders-and-email.md`).
+
 ### Data
 
 A `Payment` record is stored separately from the order (one order may have several attempts):
@@ -73,7 +113,7 @@ A `Payment` record is stored separately from the order (one order may have sever
 
 | Code | Provider | Type | Notes |
 |---|---|---|---|
-| `everypay` | EveryPay (LHV) | cards + bank links | **First to implement.** Hosted payment page; verify via callback + status API. |
+| `everypay` | EveryPay (LHV) | cards + bank links | **Built.** Hosted payment page; verified via status API on return, callback and order-page polling. |
 | `montonio` | Montonio | bank links, cards, BNPL | Planned |
 | `maksekeskus` | Maksekeskus (MakeCommerce) | bank links, cards | Planned |
 | `tarkpay` | TarkPay | | Planned |

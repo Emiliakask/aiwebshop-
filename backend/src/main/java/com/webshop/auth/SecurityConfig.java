@@ -32,7 +32,9 @@ public class SecurityConfig {
 		http
 				.cors(Customizer.withDefaults()) // uses the CORS rules in WebConfig
 				// CSRF token in the XSRF-TOKEN cookie; the frontend sends it back as X-XSRF-TOKEN.
-				.csrf(csrf -> csrf.spa())
+				// Payment providers call /notify server-to-server, so they can't send a CSRF token. The endpoint only
+				// makes us ask the provider for the real status, so it's safe without one.
+				.csrf(csrf -> csrf.spa().ignoringRequestMatchers(pathPattern("/api/payments/*/notify")))
 				.addFilterAfter(new CsrfCookieFilter(), BasicAuthenticationFilter.class)
 				.authorizeHttpRequests(auth -> auth
 						.requestMatchers(HttpMethod.GET, "/api/products", "/api/products/**").permitAll()

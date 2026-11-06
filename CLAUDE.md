@@ -54,7 +54,7 @@ webshop/                 ← git repository root (frontend, backend and docs in 
 |---|---|---|
 | Products & admin module | [docs/admin.md](docs/admin.md) | Product CRUD built and admin-only; orders view planned |
 | Orders, statuses, emails | [docs/orders-and-email.md](docs/orders-and-email.md) | Order creation built; emails planned |
-| Payments | [docs/payments.md](docs/payments.md) | Planned (EveryPay first) |
+| Payments | [docs/payments.md](docs/payments.md) | EveryPay built (demo tested); others planned |
 | Shipping / parcel machines | [docs/shipping.md](docs/shipping.md) | Omniva built; SmartPost, DPD, Unisend planned |
 | Authentication | [docs/auth.md](docs/auth.md) | Admin Google login built; Smart-ID choose-number + demo test account built; QR planned |
 | API contract | `frontend/src/mocks/handlers.ts` (comment at the top) | Source of truth for endpoint shapes |
@@ -70,6 +70,8 @@ webshop/                 ← git repository root (frontend, backend and docs in 
   - session cart (`/api/cart/**`)
   - orders (`POST /api/orders` with an idempotency key, server-side totals and a locked stock check; `GET /api/orders/{id}`)
   - Omniva parcel machines (`/api/shipping/methods`, `/api/shipping/pickup-points`): live list cached for 12 h, and the chosen machine checked and saved on the order
+  - EveryPay payments (`com.webshop.payments`): hosted payment page, status always checked with EveryPay,
+    amount must match, failed payment releases stock (config: `EVERYPAY_*`, `PUBLIC_URL` in backend/.env)
   - EUR-only money with strict integer amounts
   - config read from `backend/.env`
 - **Built in the frontend:**
@@ -79,7 +81,8 @@ webshop/                 ← git repository root (frontend, backend and docs in 
   - order page with payment-status polling
   - sold-out products shown as unavailable
 - **Not built yet:**
-  - payments (orders stay `pending_payment`)
+  - payment reconciliation job (unfinished payments stay `pending_payment` until the order page is opened);
+    payment method choice at checkout; other payment providers
   - emails
   - Smart-ID QR code login (needs a QR library); saving customers to the database / order history
   - SmartPost, DPD and Unisend; registering shipments with the carrier
