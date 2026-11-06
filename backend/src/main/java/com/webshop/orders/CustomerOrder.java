@@ -44,16 +44,26 @@ public class CustomerOrder {
 	public String fullName;
 
 	@Column(nullable = false)
-	public String addressLine1;
-
-	@Column(nullable = false)
-	public String city;
-
-	@Column(nullable = false)
-	public String postalCode;
+	public String phone;
 
 	@Column(nullable = false)
 	public String country;
+
+	/** Delivery: carrier and a snapshot of the parcel machine, so later list changes don't alter the order. */
+	@Column(nullable = false)
+	public String carrierCode;
+
+	@Column(nullable = false)
+	public String pickupPointId;
+
+	@Column(nullable = false)
+	public String pickupPointName;
+
+	@Column(nullable = false)
+	public String pickupPointAddress;
+
+	@Column(nullable = false)
+	public String pickupPointCity;
 
 	@ElementCollection(fetch = FetchType.EAGER)
 	@CollectionTable(name = "order_lines", joinColumns = @JoinColumn(name = "order_id"))
@@ -77,4 +87,7 @@ public class CustomerOrder {
 
 	@Column(nullable = false)
 	public Instant createdAt;
+
+	/** When the payment provider confirmed the payment. */
+	public Instant paidAt;
 }

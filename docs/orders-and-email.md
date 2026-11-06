@@ -35,9 +35,10 @@ pending_payment ──► paid
 ## Order data
 
 Snapshot everything at order time, so later product edits don't change past orders:
-`id` (human-readable, e.g. `WS-123456`), `status`, `email`, customer name, address, lines
-(`productId, name, unitPrice, quantity, lineTotal`), `subtotal`, `shippingPrice`, `total` (all `Money`, EUR),
-payment provider code (later), parcel machine snapshot (later), `createdAt`, `paidAt`.
+`id` (human-readable, e.g. `WS-123456`), `status`, `email`, customer name, mobile phone, country, lines
+(`productId, name, unitPrice, quantity, lineTotal`), `subtotal`, `shipping`, `total` (all `Money`, EUR),
+carrier code + parcel machine snapshot (`pickupPointId, name, address, city`), payment provider code (later),
+`createdAt`, `paidAt` (later).
 
 ## Emails: to the customer and to the admin
 

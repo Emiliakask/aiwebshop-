@@ -18,6 +18,7 @@ import org.springframework.web.server.ResponseStatusException;
 import com.webshop.auth.MeController;
 import com.webshop.cart.SessionCart;
 import com.webshop.common.Money;
+import com.webshop.payments.PaymentService;
 
 import jakarta.servlet.http.HttpSession;
 import jakarta.validation.Valid;
@@ -27,19 +28,32 @@ import jakarta.validation.Valid;
 public class OrderController {
 
 	/** Same shape as orderSchema in frontend/src/features/checkout/types.ts. */
-	public record OrderView(String id, OrderStatus status, String email, Money total, String paymentUrl) {
-		static OrderView of(CustomerOrder order) {
-			// paymentUrl will come from the payment provider (docs/payments.md).
-			return new OrderView(order.id, order.status, order.email, order.total, null);
+	public record OrderView(String id, OrderStatus status, String email, Money total, Money shipping,
+			Delivery delivery, String paymentUrl) {
+		/** paymentUrl: the provider's payment page, only while the order still waits for payment. */
+		static OrderView of(CustomerOrder order, String paymentUrl) {
+			// Orders placed before parcel machine delivery existed have no delivery info.
+			Delivery delivery = order.carrierCode == null ? null
+					: new Delivery(order.carrierCode, order.pickupPointName, order.pickupPointAddress,
+							order.pickupPointCity);
+			return new OrderView(order.id, order.status, order.email, order.total,
+					order.shipping == null ? Money.eur(0) : order.shipping, delivery,
+					order.status == OrderStatus.PENDING_PAYMENT ? paymentUrl : null);
 		}
+	}
+
+	/** Where the parcel goes. */
+	public record Delivery(String carrierCode, String pickupPointName, String address, String city) {
 	}
 
 	private static final String MY_ORDERS = OrderController.class.getName() + ".orders";
 
 	private final OrderService orders;
+	private final PaymentService payments;
 
-	public OrderController(OrderService orders) {
+	public OrderController(OrderService orders, PaymentService payments) {
 		this.orders = orders;
+		this.payments = payments;
 	}
 
 	@PostMapping
@@ -56,15 +70,22 @@ public class OrderController {
 			cart.saveTo(session);
 		}
 		rememberOrder(session, order.id);
-		return ResponseEntity.status(retry ? HttpStatus.OK : HttpStatus.CREATED).body(OrderView.of(order));
+		// The order is saved (stock reserved) before we talk to the payment provider.
+		String paymentUrl = payments.startFor(order).map(p -> p.redirectUrl).orElse(null);
+		CustomerOrder current = orders.find(order.id).orElse(order);
+		return ResponseEntity.status(retry ? HttpStatus.OK : HttpStatus.CREATED).body(OrderView.of(current, paymentUrl));
 	}
 
 	/** Only the browser session that placed the order, or an admin, may see it. Others get 404. */
 	@GetMapping("/{id}")
 	public OrderView get(@PathVariable String id, HttpSession session, Authentication authentication) {
 		boolean allowed = myOrders(session).contains(id) || MeController.isAdmin(authentication);
-		return orders.find(id).filter(order -> allowed).map(OrderView::of)
+		CustomerOrder order = orders.find(id).filter(o -> allowed)
 				.orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Order not found"));
+		// The provider's callback can't reach a local machine, so the polling order page also asks the provider.
+		payments.refreshIfPending(order);
+		CustomerOrder current = orders.find(id).orElse(order);
+		return OrderView.of(current, payments.latestFor(id).map(p -> p.redirectUrl).orElse(null));
 	}
 
 	@SuppressWarnings("unchecked")

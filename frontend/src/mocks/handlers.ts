@@ -8,14 +8,22 @@
  *   POST   /api/products          [admin]  ProductInput -> 201 Product | 400 | 401 | 403 | 409 (slug taken)
  *   PUT    /api/products/:id      [admin]  ProductInput -> Product | 400 | 401 | 403 | 404 | 409
  *   DELETE /api/products/:id      [admin]  -> 204 | 401 | 403 | 404
- *   GET    /api/me                         -> Me | 401
+ *   GET    /api/me                         -> Me (admin | customer) | 401
  *   POST   /api/logout                     -> 204
+ *   GET    /api/auth/smart-id/config       -> { environment: "demo"|"production", testAccount }
+ *   POST   /api/auth/smart-id/notification { country, personalCode } -> { verificationCode } | 400 | 404 (no account) | 502
+ *   POST   /api/auth/smart-id/status       -> { state: "running" } | { state: "complete", me: Customer }
+ *                                             | { state: "failed", reason } | 404 (no login in progress)
+ *   POST   /api/auth/test-account          -> Customer | 404 (not demo / disabled)
  *   GET    /api/cart                       -> Cart            (session cookie)
  *   POST   /api/cart/items                 { productId, quantity } -> Cart | 400 | 404 | 409 (out of stock)
  *   PATCH  /api/cart/items/:productId      { quantity }            -> Cart | 400 | 404
  *   DELETE /api/cart/items/:productId      -> Cart
+ *   GET    /api/shipping/methods?country=EE                -> ShippingMethod[] (priced for this cart)
+ *   GET    /api/shipping/pickup-points?carrier=&country=   -> PickupPoint[] (sorted by city, name) | 400
  *   POST   /api/orders                     CheckoutFormValues + Idempotency-Key header
- *                                          -> 201 Order (200 for a repeated key) | 400 | 409 (item unavailable)
+ *                                          -> 201 Order (200 for a repeated key)
+ *                                             | 400 (invalid, unknown parcel machine) | 409 (item unavailable)
  *   GET    /api/orders/:id                 -> Order | 404 (also 404 if it isn't this session's order)
  *
  * Shapes are the Zod schemas in src/features/<feature>/types.ts.
@@ -23,23 +31,33 @@
  * Errors: non-2xx with { message: string }.
  * Non-GET requests send the XSRF-TOKEN cookie back as the X-XSRF-TOKEN header.
  * Admin login itself is a browser redirect to {backend}/oauth2/authorization/google.
+ * Mock Smart-ID personal codes: 30403039917 refuses, 39001010002 has no account, anything else
+ * valid logs in as "OK TEST" after two status checks.
  */
 import { delay, http, HttpResponse } from 'msw'
 import type { Cart } from '@/features/cart/types'
 import { MAX_QUANTITY_PER_ITEM } from '@/features/cart/types'
 import { SHOP_CURRENCY, type Money } from '@/lib/money'
-import type { Me } from '@/features/auth/types'
+import type { Customer, Me } from '@/features/auth/types'
 import type { Order } from '@/features/checkout/types'
 import {
   parseProductSort,
   productSchema,
   type Product,
 } from '@/features/products/types'
-import { products as seedProducts } from './data'
+import { pickupPoints, products as seedProducts } from './data'
 
 const CURRENCY = SHOP_CURRENCY
+/** Omniva parcel machine price; free from €50 (same rule as the backend). */
 const SHIPPING_FEE = 499
 const FREE_SHIPPING_FROM = 5000
+const CARRIERS = [
+  {
+    carrierCode: 'omniva',
+    name: 'Omniva parcel machine',
+    countries: ['EE', 'LV', 'LT'],
+  },
+]
 /** Mock "payment provider" confirms payment this long after the order is placed. */
 const PAYMENT_CONFIRMATION_MS = 3000
 
@@ -50,7 +68,8 @@ let cart = new Map<string, number>()
 let orders = new Map<string, StoredOrder>()
 let idempotencyKeys = new Map<string, string>()
 /** The mock shop starts logged in as admin, so /admin works without Google. */
-let admin: Me | null = null
+let me: Me | null = null
+let smartIdLogin: { personalCode: string; polls: number } | null = null
 const MOCK_ADMIN: Me = {
   type: 'admin',
   name: 'Mock Admin',
@@ -63,7 +82,15 @@ export function resetMockDb() {
   cart = new Map()
   orders = new Map()
   idempotencyKeys = new Map()
-  admin = MOCK_ADMIN
+  me = MOCK_ADMIN
+  smartIdLogin = null
+}
+
+const MOCK_CUSTOMER: Customer = {
+  type: 'customer',
+  name: 'OK TEST',
+  country: 'EE',
+  personalCode: '4050404****',
 }
 resetMockDb()
 
@@ -117,7 +144,8 @@ function error(status: number, message: string) {
 }
 
 function requireAdmin() {
-  return admin ? null : error(401, 'Not logged in')
+  if (!me) return error(401, 'Not logged in')
+  return me.type === 'admin' ? null : error(403, 'Forbidden')
 }
 
 const productInputSchema = productSchema.omit({ id: true })
@@ -174,13 +202,63 @@ export const handlers = [
 
   http.get('*/api/me', async () => {
     await delay()
-    return admin ? HttpResponse.json(admin) : error(401, 'Not logged in')
+    return me ? HttpResponse.json(me) : error(401, 'Not logged in')
   }),
 
   http.post('*/api/logout', async () => {
     await delay()
-    admin = null
+    me = null
     return new HttpResponse(null, { status: 204 })
+  }),
+
+  http.get('*/api/auth/smart-id/config', async () => {
+    await delay()
+    return HttpResponse.json({ environment: 'demo', testAccount: true })
+  }),
+
+  http.post('*/api/auth/smart-id/notification', async ({ request }) => {
+    await delay()
+    const body = (await request.json()) as {
+      country?: string
+      personalCode?: string
+    }
+    const code = body.personalCode?.trim() ?? ''
+    if (
+      !['EE', 'LV', 'LT'].includes(body.country ?? '') ||
+      !/^[\d-]{11,12}$/.test(code)
+    ) {
+      return error(400, 'Invalid personal code')
+    }
+    if (code === '39001010002') {
+      return error(404, 'No Smart-ID account for this personal code')
+    }
+    smartIdLogin = { personalCode: code, polls: 0 }
+    return HttpResponse.json({ verificationCode: '2086' })
+  }),
+
+  http.post('*/api/auth/smart-id/status', async () => {
+    await delay()
+    if (!smartIdLogin) return error(404, 'No Smart-ID login in progress')
+    smartIdLogin.polls += 1
+    if (smartIdLogin.polls < 2) return HttpResponse.json({ state: 'running' })
+    const { personalCode } = smartIdLogin
+    smartIdLogin = null
+    if (personalCode === '30403039917') {
+      return HttpResponse.json({ state: 'failed', reason: 'user_refused' })
+    }
+    me = MOCK_CUSTOMER
+    return HttpResponse.json({ state: 'complete', me })
+  }),
+
+  http.post('*/api/auth/test-account', async () => {
+    await delay()
+    me = {
+      type: 'customer',
+      name: 'Test User',
+      country: 'EE',
+      personalCode: '0000000****',
+    }
+    return HttpResponse.json(me)
   }),
 
   http.post('*/api/products', async ({ request }) => {
@@ -219,6 +297,41 @@ export const handlers = [
     if (!findProduct(id)) return error(404, 'Product not found')
     products = products.filter((p) => p.id !== id)
     return new HttpResponse(null, { status: 204 })
+  }),
+
+  http.get('*/api/shipping/methods', async ({ request }) => {
+    await delay()
+    const country = new URL(request.url).searchParams.get('country') ?? ''
+    const subtotal = buildCart().subtotal.amount
+    const price = money(subtotal >= FREE_SHIPPING_FROM ? 0 : SHIPPING_FEE)
+    return HttpResponse.json(
+      CARRIERS.filter((c) => c.countries.includes(country)).map((c) => ({
+        carrierCode: c.carrierCode,
+        name: c.name,
+        price,
+      })),
+    )
+  }),
+
+  http.get('*/api/shipping/pickup-points', async ({ request }) => {
+    await delay()
+    const params = new URL(request.url).searchParams
+    const carrier = params.get('carrier')
+    if (!CARRIERS.some((c) => c.carrierCode === carrier)) {
+      return error(400, 'Unknown delivery method')
+    }
+    return HttpResponse.json(
+      pickupPoints
+        .filter(
+          (p) =>
+            p.carrierCode === carrier &&
+            p.countryCode === params.get('country'),
+        )
+        .sort(
+          (a, b) =>
+            a.city.localeCompare(b.city) || a.name.localeCompare(b.name),
+        ),
+    )
   }),
 
   http.get('*/api/cart', async () => {
@@ -280,8 +393,20 @@ export const handlers = [
     const existing = existingId ? orders.get(existingId) : undefined
     if (existing) return HttpResponse.json(withPaymentStatus(existing))
 
-    const body = (await request.json()) as { email?: unknown }
+    const body = (await request.json()) as {
+      email?: unknown
+      country?: unknown
+      carrierCode?: unknown
+      pickupPointId?: unknown
+    }
     if (typeof body.email !== 'string') return error(400, 'Invalid email')
+    const pickupPoint = pickupPoints.find(
+      (p) =>
+        p.id === body.pickupPointId &&
+        p.carrierCode === body.carrierCode &&
+        p.countryCode === body.country,
+    )
+    if (!pickupPoint) return error(400, 'Unknown parcel machine')
 
     const current = buildCart()
     if (current.items.length === 0) return error(400, 'Cart is empty')
@@ -297,6 +422,13 @@ export const handlers = [
       status: 'pending_payment',
       email: body.email,
       total: money(subtotal + shipping),
+      shipping: money(shipping),
+      delivery: {
+        carrierCode: pickupPoint.carrierCode,
+        pickupPointName: pickupPoint.name,
+        address: pickupPoint.address,
+        city: pickupPoint.city,
+      },
       // A real backend returns the payment provider's hosted checkout URL here.
       paymentUrl: null,
       createdAt: Date.now(),

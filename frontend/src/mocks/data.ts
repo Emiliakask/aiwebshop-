@@ -1,4 +1,5 @@
 import type { Product } from '@/features/products/types'
+import type { PickupPoint } from '@/features/shipping/types'
 
 /** Simple generated product "photos" so the mock shop needs no image files. */
 function placeholderImage(
@@ -195,3 +196,61 @@ export const products: Product[] = seeds.map(
     imageUrl: placeholderImage(colors[0], colors[1], shapes[shape]),
   }),
 )
+
+/** A few real Omniva parcel machines (from https://www.omniva.ee/locations.json). */
+function omniva(
+  id: string,
+  name: string,
+  address: string,
+  city: string,
+  countryCode: string,
+): PickupPoint {
+  return {
+    id,
+    carrierCode: 'omniva',
+    name,
+    address,
+    city,
+    countryCode,
+    latitude: null,
+    longitude: null,
+  }
+}
+
+export const pickupPoints: PickupPoint[] = [
+  omniva(
+    '96003',
+    'Tallinna Akadeemia Coop Konsumi pakiautomaat',
+    'Akadeemia tee 35',
+    'Tallinn',
+    'EE',
+  ),
+  omniva(
+    '96338',
+    'Märja Coop Konsumi pakiautomaat',
+    'Aisa tn 2',
+    'Tartu linn',
+    'EE',
+  ),
+  omniva(
+    '96401',
+    'Ala Coop kaupluse pakiautomaat',
+    'Ala küla',
+    'Tõrva vald',
+    'EE',
+  ),
+  omniva(
+    '9111',
+    'Rīgas A. Briāna ielas RIMI pakomāts',
+    'Krišjāņa Valdemāra iela 62A',
+    'Rīga',
+    'LV',
+  ),
+  omniva(
+    '55583',
+    'Akmenės NORFA Daukanto paštomatas',
+    'S. Daukanto g. 7',
+    'Akmenės m.',
+    'LT',
+  ),
+]

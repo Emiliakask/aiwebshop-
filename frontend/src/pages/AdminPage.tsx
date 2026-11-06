@@ -29,5 +29,9 @@ export function AdminPage() {
       />
     )
   }
-  return me.data ? <AdminProducts admin={me.data} /> : <AdminLogin />
+  return me.data?.type === 'admin' ? (
+    <AdminProducts admin={me.data} />
+  ) : (
+    <AdminLogin />
+  )
 }

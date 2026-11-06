@@ -50,6 +50,8 @@ export function OrderPage() {
     return <ErrorState message={t.loadError} onRetry={() => order.refetch()} />
   }
 
+  const delivery = order.data.delivery
+
   return (
     <div className="mx-auto flex max-w-xl flex-col gap-6 text-center">
       <div aria-live="polite" className="flex flex-col gap-3">
@@ -60,6 +62,24 @@ export function OrderPage() {
         <div className="flex justify-between gap-4">
           <dt className="text-stone-600">{t.orderNumber}</dt>
           <dd className="font-mono text-sm">{order.data.id}</dd>
+        </div>
+        {delivery && (
+          <div className="flex justify-between gap-4">
+            <dt className="text-stone-600">{t.deliveryTo}</dt>
+            <dd className="text-right">
+              {delivery.pickupPointName}
+              <br />
+              <span className="text-sm text-stone-600">
+                {[delivery.address, delivery.city].filter(Boolean).join(', ')}
+              </span>
+            </dd>
+          </div>
+        )}
+        <div className="flex justify-between gap-4">
+          <dt className="text-stone-600">{t.shipping}</dt>
+          <dd>
+            <PriceTag price={order.data.shipping} />
+          </dd>
         </div>
         <div className="flex justify-between gap-4">
           <dt className="text-stone-600">{t.total}</dt>

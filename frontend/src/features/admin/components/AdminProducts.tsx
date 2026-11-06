@@ -4,7 +4,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { useLogout } from '@/features/auth/api'
-import type { Me } from '@/features/auth/types'
+import type { Admin } from '@/features/auth/types'
 import { useProducts } from '@/features/products/api'
 import { strings } from '@/lib/i18n/strings'
 import { AdminProductList } from './AdminProductList'
@@ -14,7 +14,7 @@ const t = strings.admin
 
 type Editing = { mode: 'new' } | { mode: 'edit'; id: string } | null
 
-export function AdminProducts({ admin }: { admin: Me }) {
+export function AdminProducts({ admin }: { admin: Admin }) {
   const products = useProducts({ search: '', sort: 'name' })
   const logout = useLogout()
   const [editing, setEditing] = useState<Editing>(null)

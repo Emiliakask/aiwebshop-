@@ -19,10 +19,10 @@ test('browse → product → add to cart → checkout → order paid', async ({
 
   await page.getByLabel('Email').fill('ada@example.com')
   await page.getByLabel('Full name').fill('Ada Lovelace')
-  await page.getByLabel('Street address').fill('Narva mnt 1')
-  await page.getByLabel('City').fill('Tallinn')
-  await page.getByLabel('Postal code').fill('10117')
+  await page.getByLabel('Mobile phone').fill('+372 5123 4567')
   await page.getByLabel('Country').selectOption('EE')
+  await page.getByLabel('Search parcel machines').fill('akadeemia')
+  await page.getByLabel('Parcel machine', { exact: true }).selectOption('96003')
   await page.getByRole('button', { name: 'Place order and pay' }).click()
 
   await expect(
