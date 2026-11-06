@@ -1,6 +1,7 @@
 import { defineConfig, devices } from '@playwright/test'
 
-const PORT = 5174
+// Own port, so a dev server you have running (maybe against the real backend) is never reused by mistake.
+const PORT = Number(process.env.E2E_PORT ?? 5199)
 
 export default defineConfig({
   testDir: './e2e',

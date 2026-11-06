@@ -17,21 +17,21 @@ import com.webshop.cart.SessionCart;
 import com.webshop.common.Money;
 import com.webshop.products.Product;
 import com.webshop.products.ProductRepository;
+import com.webshop.shipping.PickupPoint;
+import com.webshop.shipping.ShippingService;
 
 @Service
 public class OrderService {
 
-	/** €4.99 delivery, free from €50.00. Will move to the shipping carriers (docs/shipping.md). */
-	static final Money SHIPPING_FEE = Money.eur(499);
-	static final long FREE_SHIPPING_FROM = 5000;
-
 	private final OrderRepository orders;
 	private final ProductRepository products;
+	private final ShippingService shipping;
 	private final SecureRandom random = new SecureRandom();
 
-	public OrderService(OrderRepository orders, ProductRepository products) {
+	public OrderService(OrderRepository orders, ProductRepository products, ShippingService shipping) {
 		this.orders = orders;
 		this.products = products;
+		this.shipping = shipping;
 	}
 
 	public Optional<CustomerOrder> findByIdempotencyKey(String key) {
@@ -55,6 +55,9 @@ public class OrderService {
 		if (cart.isEmpty()) {
 			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cart is empty");
 		}
+		PickupPoint pickupPoint = shipping
+				.findPickupPoint(request.carrierCode(), request.country(), request.pickupPointId())
+				.orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unknown parcel machine"));
 
 		Map<UUID, Product> locked = products.findAllByIdForUpdate(cart.lines().keySet()).stream()
 				.collect(Collectors.toMap(p -> p.id, Function.identity()));
@@ -73,25 +76,24 @@ public class OrderService {
 			product.stock -= quantity;
 		}
 
-		Money shipping = shippingFor(subtotal);
+		Money deliveryPrice = shipping.price(pickupPoint.carrierCode(), subtotal);
 		order.id = newOrderId();
 		order.status = OrderStatus.PENDING_PAYMENT;
 		order.idempotencyKey = idempotencyKey;
 		order.email = request.email().trim();
 		order.fullName = request.fullName().trim();
-		order.addressLine1 = request.addressLine1().trim();
-		order.city = request.city().trim();
-		order.postalCode = request.postalCode().trim();
+		order.phone = request.phone().trim();
 		order.country = request.country();
+		order.carrierCode = pickupPoint.carrierCode();
+		order.pickupPointId = pickupPoint.id();
+		order.pickupPointName = pickupPoint.name();
+		order.pickupPointAddress = pickupPoint.address();
+		order.pickupPointCity = pickupPoint.city();
 		order.subtotal = subtotal;
-		order.shipping = shipping;
-		order.total = subtotal.plus(shipping);
+		order.shipping = deliveryPrice;
+		order.total = subtotal.plus(deliveryPrice);
 		order.createdAt = Instant.now();
 		return orders.save(order);
-	}
-
-	static Money shippingFor(Money subtotal) {
-		return subtotal.amount() >= FREE_SHIPPING_FROM ? Money.eur(0) : SHIPPING_FEE;
 	}
 
 	private String newOrderId() {

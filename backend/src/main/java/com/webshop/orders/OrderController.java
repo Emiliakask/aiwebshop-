@@ -27,11 +27,21 @@ import jakarta.validation.Valid;
 public class OrderController {
 
 	/** Same shape as orderSchema in frontend/src/features/checkout/types.ts. */
-	public record OrderView(String id, OrderStatus status, String email, Money total, String paymentUrl) {
+	public record OrderView(String id, OrderStatus status, String email, Money total, Money shipping,
+			Delivery delivery, String paymentUrl) {
 		static OrderView of(CustomerOrder order) {
 			// paymentUrl will come from the payment provider (docs/payments.md).
-			return new OrderView(order.id, order.status, order.email, order.total, null);
+			// Orders placed before parcel machine delivery existed have no delivery info.
+			Delivery delivery = order.carrierCode == null ? null
+					: new Delivery(order.carrierCode, order.pickupPointName, order.pickupPointAddress,
+							order.pickupPointCity);
+			return new OrderView(order.id, order.status, order.email, order.total,
+					order.shipping == null ? Money.eur(0) : order.shipping, delivery, null);
 		}
+	}
+
+	/** Where the parcel goes. */
+	public record Delivery(String carrierCode, String pickupPointName, String address, String city) {
 	}
 
 	private static final String MY_ORDERS = OrderController.class.getName() + ".orders";

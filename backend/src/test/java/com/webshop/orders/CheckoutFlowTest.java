@@ -3,6 +3,7 @@ package com.webshop.orders;
 import static com.webshop.TestSupport.admin;
 import static com.webshop.TestSupport.product;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
@@ -10,6 +11,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -17,6 +19,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,6 +27,8 @@ import org.springframework.transaction.annotation.Transactional;
 import com.jayway.jsonpath.JsonPath;
 import com.webshop.products.Product;
 import com.webshop.products.ProductRepository;
+import com.webshop.shipping.omniva.OmnivaClient;
+import com.webshop.shipping.omniva.OmnivaTestData;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -31,9 +36,10 @@ import com.webshop.products.ProductRepository;
 @Transactional
 class CheckoutFlowTest {
 
+	/** Delivery to a real Omniva machine from the test list (Akadeemia tee 35, Tallinn). */
 	static final String CHECKOUT = """
-			{"email":"mari@example.com","fullName":"Mari Maasikas","addressLine1":"Narva mnt 1",
-			 "city":"Tallinn","postalCode":"10117","country":"EE"}
+			{"email":"mari@example.com","fullName":"Mari Maasikas","phone":"+372 5123 4567",
+			 "country":"EE","carrierCode":"omniva","pickupPointId":"96003"}
 			""";
 
 	@Autowired
@@ -45,7 +51,15 @@ class CheckoutFlowTest {
 	@Autowired
 	OrderRepository orders;
 
+	@MockitoBean
+	OmnivaClient omniva;
+
 	final MockHttpSession session = new MockHttpSession();
+
+	@BeforeEach
+	void omnivaList() {
+		when(omniva.fetchLocations()).thenReturn(OmnivaTestData.sampleLocations());
+	}
 
 	@Test
 	void cartTotalsAreExactCentsFromTheDatabase() throws Exception {
@@ -82,7 +96,12 @@ class CheckoutFlowTest {
 				.andExpect(status().isCreated())
 				.andExpect(jsonPath("$.status").value("pending_payment"))
 				.andExpect(jsonPath("$.total.amount").value(2500 + 499))
-				.andExpect(jsonPath("$.total.currency").value("EUR"));
+				.andExpect(jsonPath("$.total.currency").value("EUR"))
+				.andExpect(jsonPath("$.shipping.amount").value(499))
+				.andExpect(jsonPath("$.delivery.carrierCode").value("omniva"))
+				.andExpect(jsonPath("$.delivery.pickupPointName").value("Tallinna Akadeemia Coop Konsumi pakiautomaat"))
+				.andExpect(jsonPath("$.delivery.address").value("Akadeemia tee 35"))
+				.andExpect(jsonPath("$.delivery.city").value("Tallinn"));
 
 		assertThat(products.findById(mug.id).orElseThrow().stock).isEqualTo(8);
 		mvc.perform(get("/api/cart").session(session)).andExpect(jsonPath("$.items").isEmpty());
@@ -142,6 +161,21 @@ class CheckoutFlowTest {
 	}
 
 	@Test
+	void parcelMachineMustExistForThatCarrierAndCountry() throws Exception {
+		Product mug = products.save(product(1000, 5));
+		addToCart(mug, 1);
+
+		placeOrderWith("k-unknown", CHECKOUT.replace("\"96003\"", "\"00000\"")).andExpect(status().isBadRequest());
+		// A real Estonian machine, but the order says Latvia.
+		placeOrderWith("k-country", CHECKOUT.replace("\"EE\"", "\"LV\"")).andExpect(status().isBadRequest());
+		placeOrderWith("k-carrier", CHECKOUT.replace("\"omniva\"", "\"pigeon\"")).andExpect(status().isBadRequest());
+		placeOrderWith("k-phone", CHECKOUT.replace("+372 5123 4567", "call me")).andExpect(status().isBadRequest());
+
+		assertThat(orders.count()).isZero();
+		assertThat(products.findById(mug.id).orElseThrow().stock).isEqualTo(5);
+	}
+
+	@Test
 	void invalidCheckoutDetailsAreRejected() throws Exception {
 		Product mug = products.save(product(1000, 5));
 		addToCart(mug, 1);
@@ -181,7 +215,11 @@ class CheckoutFlowTest {
 	}
 
 	private ResultActions placeOrder(String key) throws Exception {
+		return placeOrderWith(key, CHECKOUT);
+	}
+
+	private ResultActions placeOrderWith(String key, String body) throws Exception {
 		return mvc.perform(post("/api/orders").session(session).with(csrf()).header("Idempotency-Key", key)
-				.contentType(MediaType.APPLICATION_JSON).content(CHECKOUT));
+				.contentType(MediaType.APPLICATION_JSON).content(body));
 	}
 }

@@ -69,10 +69,18 @@ describe('shopping flow', () => {
 
     await user.type(screen.getByLabelText('Email'), 'ada@example.com')
     await user.type(screen.getByLabelText('Full name'), 'Ada Lovelace')
-    await user.type(screen.getByLabelText('Street address'), 'Narva mnt 1')
-    await user.type(screen.getByLabelText('City'), 'Tallinn')
-    await user.type(screen.getByLabelText('Postal code'), '10117')
+    await user.type(screen.getByLabelText('Mobile phone'), '+372 5123 4567')
     await user.selectOptions(screen.getByLabelText('Country'), 'EE')
+    // Only one carrier, so it is chosen for us; then pick a parcel machine.
+    expect(
+      await screen.findByRole('radio', {
+        name: 'Omniva parcel machine — €4.99',
+      }),
+    ).toBeChecked()
+    await user.selectOptions(
+      await screen.findByLabelText('Parcel machine'),
+      '96003',
+    )
     await user.click(
       screen.getByRole('button', { name: 'Place order and pay' }),
     )
@@ -83,6 +91,9 @@ describe('shopping flow', () => {
     expect(router.state.location.pathname).toMatch(/^\/orders\/WS-\d+$/)
     // €36.00 subtotal + €4.99 shipping, calculated by the backend.
     expect(screen.getByText('€40.99')).toBeInTheDocument()
+    expect(
+      screen.getByText('Tallinna Akadeemia Coop Konsumi pakiautomaat'),
+    ).toBeInTheDocument()
   })
 
   it('removes an item and rolls back if the request fails', async () => {

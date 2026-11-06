@@ -1,8 +1,8 @@
 # Shipping and parcel machines
 
-**Status:** planned. Today the checkout form (`frontend/src/features/checkout/types.ts`) asks for a
-street address (`addressLine1, city, postalCode, country`) in `EE, FI, LV, LT, SE, DE`. The mock
-charges €4.99 shipping, free from €50 (`SHIPPING_FEE`, `FREE_SHIPPING_FROM` in `handlers.ts`).
+**Status:** **Omniva is built** (Estonia, Latvia, Lithuania). SmartPost, DPD and Unisend are planned.
+Checkout asks for name, email, mobile phone, country, delivery method and parcel machine. There is no
+street address any more. Delivery costs €4.99 and is free from €50 (config: `app.shipping.*`).
 
 ## Goal
 
@@ -18,32 +18,46 @@ checkout or frontend code.
 public interface ShippingCarrier {
     String code();                       // "omniva", "smartpost", "dpd", "unisend", ...
     String displayName();
+    Set<String> countries();             // e.g. EE, LV, LT
 
     /** Parcel machines for a country. Cache this: carriers publish lists that change rarely. */
     List<PickupPoint> pickupPoints(String countryCode);
 
-    /** Price for this cart (server-side only). */
-    Money quote(ShippingQuoteRequest request);
+    /** Delivery price before the shop-wide free-from-€50 rule (applied by ShippingService). */
+    Money basePrice();
 
-    /** Later: register the shipment with the carrier and get a tracking number / label. */
-    default Optional<Shipment> createShipment(Order order) { return Optional.empty(); }
+    // Later: register the shipment with the carrier and get a tracking number / label.
 }
 ```
 
-- `PickupPoint`: `{ id, carrierCode, name, address, city, postalCode, countryCode, lat?, lng? }`
-- `ShippingCarrierRegistry` looks carriers up by code, and the enabled ones come from config:
+- `PickupPoint`: `{ id, carrierCode, name, address, city, countryCode, latitude, longitude }`
+- `ShippingService` holds the enabled carriers (in the configured order), decides prices and checks a
+  chosen machine. Enabled carriers come from config:
   ```properties
-  app.shipping.enabled=omniva,smartpost,dpd,unisend
+  app.shipping.enabled=omniva          # later: omniva,smartpost,dpd,unisend
   ```
 - Pickup point lists are fetched from each carrier's public location feed and **cached** (refresh
   daily or so). Never fetch them on every request.
 
-### API (proposed; add to the contract in `handlers.ts` when built)
+### API (built; also in the contract comment in `frontend/src/mocks/handlers.ts`)
 
 ```
-GET /api/shipping/methods?country=EE         -> [{ carrierCode, name, price: Money }]
-GET /api/shipping/pickup-points?carrier=omniva&country=EE  -> PickupPoint[]
+GET /api/shipping/methods?country=EE                      -> [{ carrierCode, name, price: Money }]  priced for this session's cart
+GET /api/shipping/pickup-points?carrier=omniva&country=EE -> PickupPoint[]  sorted by city, then name
 ```
+
+## Omniva (`com.webshop.shipping.omniva`)
+
+- Source: the public list https://www.omniva.ee/locations.json (about 1,500 entries, 900 KB), downloaded on
+  first use and reused for 12 h (`app.shipping.omniva.refresh`). If a refresh fails, the previous list is kept.
+  If the list was never loaded, the API answers 503.
+- Kept: `TYPE "0"` (parcel machines) in EE/LV/LT. Dropped: post offices (`TYPE "1"`), the virtual
+  "preference" entries ("1. eelistus" with no county, "2. Picapac" whose city and street are its own name) and the company-internal machine ("ettevõttesisene").
+- Mapping: `ZIP` → id. `NAME` → name. `A5_NAME` + `A7_NAME` → address (the village from `A3_NAME` when there is
+  no street). City: Estonia `A2_NAME`, Latvia/Lithuania `A3_NAME` → `A2_NAME` → `A1_NAME`. Coordinates:
+  `Y_COORDINATE` is latitude, `X_COORDINATE` is longitude.
+- Tests use real sample entries in `backend/src/test/resources/omniva/locations-sample.json` and never download the live list.
+- Not built yet: registering shipments and printing labels (Omniva's business API needs a contract).
 
 The order request carries `{ carrierCode, pickupPointId }` instead of (or alongside) the street
 address. The backend checks that the pickup point exists for that carrier and recalculates the

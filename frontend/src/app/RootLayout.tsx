@@ -1,4 +1,5 @@
 import { Link, NavLink, Outlet, ScrollRestoration } from 'react-router'
+import { useLogout, useMe } from '@/features/auth/api'
 import { useCart } from '@/features/cart/api'
 import { cn } from '@/lib/cn'
 import { strings } from '@/lib/i18n/strings'
@@ -30,6 +31,9 @@ export function RootLayout() {
 
 function SiteHeader() {
   const cart = useCart()
+  const me = useMe()
+  const logout = useLogout()
+  const customer = me.data?.type === 'customer' ? me.data : undefined
   const count = cart.data?.itemCount ?? 0
 
   const navLinkClasses = ({ isActive }: { isActive: boolean }) =>
@@ -51,6 +55,20 @@ function SiteHeader() {
           <NavLink to="/admin" className={navLinkClasses}>
             {strings.nav.admin}
           </NavLink>
+          {customer ? (
+            <button
+              type="button"
+              onClick={() => logout.mutate()}
+              className="rounded-lg px-3 py-2 text-sm font-medium text-stone-600 hover:bg-stone-100"
+              aria-label={strings.nav.logoutAs(customer.name)}
+            >
+              {strings.nav.logout}
+            </button>
+          ) : (
+            <NavLink to="/login" className={navLinkClasses}>
+              {strings.nav.login}
+            </NavLink>
+          )}
           <NavLink
             to="/cart"
             className={navLinkClasses}

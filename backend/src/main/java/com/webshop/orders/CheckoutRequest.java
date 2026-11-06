@@ -7,14 +7,15 @@ import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 /**
- * What the checkout form sends: contact and delivery details only. Products, quantities and prices
- * come from the server-side cart. Same rules as checkoutFormSchema in the frontend.
+ * What the checkout form sends: contact details and the chosen parcel machine. Products, quantities
+ * and all prices come from the server. Same rules as checkoutFormSchema in the frontend.
  */
 public record CheckoutRequest(
 		@NotBlank @Email @Size(max = 200) String email,
 		@NotBlank @Size(max = 200) String fullName,
-		@NotBlank @Size(max = 200) String addressLine1,
-		@NotBlank @Size(max = 200) String city,
-		@NotNull @Pattern(regexp = "[A-Za-z0-9 -]{3,10}") String postalCode,
-		@NotNull @Pattern(regexp = "EE|FI|LV|LT|SE|DE") String country) {
+		/** The carrier texts the pickup code to this number. */
+		@NotNull @Pattern(regexp = "\\+?[0-9][0-9 ]{6,19}") String phone,
+		@NotNull @Pattern(regexp = "EE|LV|LT") String country,
+		@NotBlank @Size(max = 50) String carrierCode,
+		@NotBlank @Size(max = 50) String pickupPointId) {
 }

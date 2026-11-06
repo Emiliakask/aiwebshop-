@@ -55,8 +55,8 @@ webshop/                 ← git repository root (frontend, backend and docs in 
 | Products & admin module | [docs/admin.md](docs/admin.md) | Product CRUD built and admin-only; orders view planned |
 | Orders, statuses, emails | [docs/orders-and-email.md](docs/orders-and-email.md) | Order creation built; emails planned |
 | Payments | [docs/payments.md](docs/payments.md) | Planned (EveryPay first) |
-| Shipping / parcel machines | [docs/shipping.md](docs/shipping.md) | Planned (checkout currently asks for a street address) |
-| Authentication | [docs/auth.md](docs/auth.md) | Admin Google login built; Smart-ID planned |
+| Shipping / parcel machines | [docs/shipping.md](docs/shipping.md) | Omniva built; SmartPost, DPD, Unisend planned |
+| Authentication | [docs/auth.md](docs/auth.md) | Admin Google login built; Smart-ID choose-number + demo test account built; QR planned |
 | API contract | `frontend/src/mocks/handlers.ts` (comment at the top) | Source of truth for endpoint shapes |
 
 ## Current state (keep this up to date)
@@ -64,24 +64,30 @@ webshop/                 ← git repository root (frontend, backend and docs in 
 - **Built in the backend:**
   - products: public reads, and admin-only writes
   - admin login with Google plus the `ADMIN_EMAILS` allow-list (`GET /api/me`, `POST /api/logout`)
+  - customer login with Smart-ID "choose number", directly to SK RP API v3 (`/api/auth/smart-id/**`), every
+    response verified (signature, CA chain, OCSP, identity); demo/production split; demo test account
   - CSRF protection
   - session cart (`/api/cart/**`)
   - orders (`POST /api/orders` with an idempotency key, server-side totals and a locked stock check; `GET /api/orders/{id}`)
+  - Omniva parcel machines (`/api/shipping/methods`, `/api/shipping/pickup-points`): live list cached for 12 h, and the chosen machine checked and saved on the order
   - EUR-only money with strict integer amounts
   - config read from `backend/.env`
 - **Built in the frontend:**
-  - shop, cart and checkout, all wired to the API contract
+  - shop, cart and checkout, all wired to the API contract; checkout has a searchable parcel machine picker
   - the admin page behind a Google login
+  - `/login`: Smart-ID choose-number login (shows the verification code) and the demo test-account button
   - order page with payment-status polling
   - sold-out products shown as unavailable
 - **Not built yet:**
   - payments (orders stay `pending_payment`)
   - emails
-  - Smart-ID / customer login
-  - parcel machine picker
+  - Smart-ID QR code login (needs a QR library); saving customers to the database / order history
+  - SmartPost, DPD and Unisend; registering shipments with the carrier
   - admin orders view
 - **Known gaps:**
-  - `ddl-auto=update` is fine for now. Move to Flyway migrations before the first real deployment.
+  - `ddl-auto=update` never removes or relaxes columns. On 2026-11-04 the local `orders` table was changed by hand
+    (old address columns made optional, delivery columns added) when checkout switched to parcel machines.
+    Move to Flyway migrations before the first real deployment.
 
 ## Running locally
 
